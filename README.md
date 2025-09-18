@@ -75,19 +75,40 @@ Toutes les informations sont écrites dans `config.json` sous la racine du proje
 - **cv** : utilise `dxcam` pour capturer l'écran DirectX (Windows), OpenCV pour le template matching multi-échelle et Tesseract pour l'OCR. C'est le mode recommandé en jeu.
 - **sim** : fournisseur sinusoïdal utile pour valider l'UI ou enregistrer des démonstrations.
 
-## Packaging en EXE
+## Packaging Windows (EXE + installeur)
 
-1. Téléchargez la version portable de Tesseract et placez-la dans un dossier `tesseract/` à côté de l'exécutable.
-2. Utilisez PyInstaller :
+Le script `packaging/windows/build_installer.py` automatise la création d'un binaire PyInstaller
+et d'un installeur Inno Setup qui embarquent Tesseract en version portable.
 
-   ```bash
-   pyinstaller --name rapid-shot-overlay --noconsole --onefile \
-     --add-data "assets/*;assets" \
-     --collect-submodules heat_overlay \
-     -p src heat_overlay/app.py
+1. Préparez un environnement Python sur Windows et installez les dépendances :
+
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\activate
+   pip install -e .
+   pip install pyinstaller
    ```
 
-3. Copiez le dossier portable de Tesseract et `config.json` à côté du binaire généré.
+2. Lancez le script de packaging :
+
+   ```powershell
+   python packaging\windows\build_installer.py
+   ```
+
+   Le script télécharge automatiquement l'archive portable de Tesseract, copie son contenu dans
+   `dist\rapid-shot-overlay\tesseract` puis génère l'installeur
+   `dist\installer\RapidShotHeatOverlaySetup.exe` (si `iscc.exe` est disponible).
+
+3. Pour personnaliser le processus, plusieurs options sont disponibles :
+
+   - `--skip-installer` : conserve uniquement le dossier PyInstaller + Tesseract.
+   - `--onefile` : génère un exécutable `--onefile` puis crée un dossier bundle contenant Tesseract.
+   - `--tesseract-url <URL>` : utilise une autre archive portable de Tesseract.
+
+L'application détecte automatiquement `tesseract/tesseract.exe` lorsqu'il est situé à côté de
+`rapid-shot-overlay.exe`, que ce soit dans le dossier PyInstaller ou dans le répertoire
+d'installation généré par Inno Setup. Il n'est donc plus nécessaire d'installer Tesseract
+séparément.
 
 ## Dépannage
 

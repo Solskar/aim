@@ -54,7 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--template", type=Path, help="Chemin vers le template d'icône")
     parser.add_argument("--buffbar", type=str, help="Zone de la barre de buffs (x,y,w,h)")
     parser.add_argument("--ocrp", type=str, help="Zone OCR relative (ox,oy,w,h)")
-    parser.add_argument("--tesseract", type=Path, help="Chemin de l'exécutable Tesseract")
+    parser.add_argument(
+        "--tesseract",
+        type=Path,
+        help="Chemin de l'exécutable Tesseract (sinon détection automatique)",
+    )
     parser.add_argument("--log-level", default="INFO", help="Niveau de log")
     return parser
 
@@ -108,6 +112,65 @@ def apply_overrides(config: AppConfig, args: argparse.Namespace) -> None:
         vision.ocr_relative_rect = tuple(float(v) for v in parts)  # type: ignore[assignment]
     if args.tesseract:
         config.tesseract_cmd = args.tesseract
+
+
+def _iter_tesseract_candidates() -> list[Path]:
+    """Return a list of directories that may contain a bundled Tesseract."""
+
+    candidates: list[Path] = []
+    module_dir = Path(__file__).resolve().parent
+    candidates.append(module_dir)
+    parent = module_dir.parent
+    if parent != module_dir:
+        candidates.append(parent)
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent)
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass).resolve())
+    # Remove duplicates while preserving order
+    unique: list[Path] = []
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved not in unique:
+            unique.append(resolved)
+    return unique
+
+
+def _find_bundled_tesseract() -> Optional[Path]:
+    """Search for a packaged Tesseract executable relative to the app."""
+
+    possible_names = [
+        Path("tesseract") / "tesseract.exe",
+        Path("Tesseract-OCR") / "tesseract.exe",
+        Path("tesseract.exe"),
+        Path("tesseract") / "tesseract",
+        Path("Tesseract-OCR") / "tesseract",
+        Path("tesseract"),
+    ]
+    for base_dir in _iter_tesseract_candidates():
+        for relative in possible_names:
+            candidate = base_dir / relative
+            if candidate.exists():
+                return candidate.resolve()
+    return None
+
+
+def auto_configure_tesseract(config: AppConfig) -> None:
+    """Populate the Tesseract path if a bundled version is available."""
+
+    current = config.tesseract_cmd
+    if current and current.exists():
+        LOGGER.debug("Tesseract déjà configuré: %s", current)
+        return
+    if current and not current.exists():
+        LOGGER.warning("Chemin Tesseract configuré introuvable: %s", current)
+    detected = _find_bundled_tesseract()
+    if detected:
+        config.tesseract_cmd = detected
+        LOGGER.info("Utilisation de Tesseract packagé: %s", detected)
+    elif not current:
+        LOGGER.debug("Aucun Tesseract packagé détecté")
 
 
 class AppController(QtCore.QObject):
@@ -216,6 +279,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     configure_logging(args.log_level)
     config = AppConfig.load(args.config)
     apply_overrides(config, args)
+    auto_configure_tesseract(config)
     config.save(args.config)
 
     qt_args = sys.argv if argv is None else [sys.argv[0], *argv]
