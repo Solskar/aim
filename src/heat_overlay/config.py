@@ -44,6 +44,7 @@ class VisionOptions:
     template_path: Optional[Path] = None
     buff_bar_region: Optional[Tuple[int, int, int, int]] = None
     ocr_relative_rect: Optional[Tuple[float, float, float, float]] = None
+    capture_backend: str = "auto"
     search_margin: int = 16
     search_scale_steps: int = 3
     search_scale_factor: float = 0.12
@@ -102,6 +103,7 @@ class AppConfig:
             template_path=_maybe_path(vision_data.get("template_path")),
             buff_bar_region=_maybe_tuple(vision_data.get("buff_bar_region")),
             ocr_relative_rect=_maybe_tuple(vision_data.get("ocr_relative_rect")),
+            capture_backend=vision_data.get("capture_backend", "auto"),
             search_margin=vision_data.get("search_margin", 16),
             search_scale_steps=vision_data.get("search_scale_steps", 3),
             search_scale_factor=vision_data.get("search_scale_factor", 0.12),

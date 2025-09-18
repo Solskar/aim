@@ -8,6 +8,7 @@ Outil autonome destiné à suivre en temps réel la Heat du sort **Rapid Shot** 
 - **Vision par ordinateur** : localisation multi-échelle du buff Rapid Shot et lecture fiable du compteur de Heat via Tesseract.
 - **Modes d'affichage** : jauge centrée ou attachée au curseur avec offset configurable.
 - **Personnalisation complète** : taille, largeur d'anneau, gap, couleurs (thèmes), ticks fixes, halo visuel et affichage numérique optionnel.
+- **Compatibilité DirectX & Vulkan** : capture écran possible via `dxcam` ou `mss` (Windows Graphics Capture), sélection automatique du backend le plus adapté.
 - **Assistant de calibration** : sélection guidée de l'icône, de la barre de buffs et de la zone OCR. Relance possible via raccourcis (Ctrl+K/I/B/O).
 - **Sauvegarde automatique** : les paramètres sont stockés dans `config.json` (chemins de template, zone de capture, offsets OCR, etc.).
 - **Mode simulation** : un fournisseur interne permet de tester l'interface sans lancer le jeu.
@@ -50,6 +51,7 @@ heat-overlay --provider sim --mode cursor --debug
 | `--buffbar x,y,w,h` | Définit la région de capture de la barre de buffs. |
 | `--ocrp ox,oy,w,h` | Définit la zone OCR relative à l'icône. |
 | `--tesseract PATH` | Chemin vers `tesseract.exe` portable. |
+| `--capture-backend {auto,dxcam,mss}` | Forcer un backend de capture (`mss` recommandé pour Vulkan plein écran). |
 | `--provider {cv,sim}` | Sélectionne le fournisseur de Heat. |
 | `--config PATH` | Fichier de configuration personnalisé. |
 | `--log-level` | Niveau de log (`INFO`, `DEBUG`, ...). |
@@ -72,7 +74,7 @@ Toutes les informations sont écrites dans `config.json` sous la racine du proje
 
 ## Fournisseur de Heat
 
-- **cv** : utilise `dxcam` pour capturer l'écran DirectX (Windows), OpenCV pour le template matching multi-échelle et Tesseract pour l'OCR. C'est le mode recommandé en jeu.
+- **cv** : utilise `dxcam` ou `mss` (Windows Graphics Capture) pour capturer l'écran quelle que soit l'API graphique (DirectX, Vulkan), OpenCV pour le template matching multi-échelle et Tesseract pour l'OCR. Le backend est sélectionné automatiquement mais peut être forcé via `--capture-backend`.
 - **sim** : fournisseur sinusoïdal utile pour valider l'UI ou enregistrer des démonstrations.
 
 ## Packaging en EXE

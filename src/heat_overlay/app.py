@@ -55,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--buffbar", type=str, help="Zone de la barre de buffs (x,y,w,h)")
     parser.add_argument("--ocrp", type=str, help="Zone OCR relative (ox,oy,w,h)")
     parser.add_argument("--tesseract", type=Path, help="Chemin de l'exécutable Tesseract")
+    parser.add_argument(
+        "--capture-backend",
+        choices=["auto", "dxcam", "mss"],
+        help="Force un backend de capture (auto, dxcam ou mss compatible Vulkan)",
+    )
     parser.add_argument("--log-level", default="INFO", help="Niveau de log")
     return parser
 
@@ -108,6 +113,8 @@ def apply_overrides(config: AppConfig, args: argparse.Namespace) -> None:
         vision.ocr_relative_rect = tuple(float(v) for v in parts)  # type: ignore[assignment]
     if args.tesseract:
         config.tesseract_cmd = args.tesseract
+    if args.capture_backend:
+        vision.capture_backend = args.capture_backend
 
 
 class AppController(QtCore.QObject):
