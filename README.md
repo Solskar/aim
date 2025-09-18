@@ -51,6 +51,7 @@ heat-overlay --provider sim --mode cursor --debug
 | `--ocrp ox,oy,w,h` | Définit la zone OCR relative à l'icône. |
 | `--tesseract PATH` | Chemin vers `tesseract.exe` portable. |
 | `--provider {cv,sim}` | Sélectionne le fournisseur de Heat. |
+| `--capture-backend {auto,dxcam,mss,vulkan}` | Choisit le backend de capture (`auto` tente DirectX puis Vulkan). |
 | `--config PATH` | Fichier de configuration personnalisé. |
 | `--log-level` | Niveau de log (`INFO`, `DEBUG`, ...). |
 
@@ -72,7 +73,7 @@ Toutes les informations sont écrites dans `config.json` sous la racine du proje
 
 ## Fournisseur de Heat
 
-- **cv** : utilise `dxcam` pour capturer l'écran DirectX (Windows), OpenCV pour le template matching multi-échelle et Tesseract pour l'OCR. C'est le mode recommandé en jeu.
+- **cv** : capture via `dxcam` (DirectX) ou `mss` (capture générique compatible Vulkan) suivant le backend sélectionné (`--capture-backend` ou `vision.capture_backend` dans la config), puis applique OpenCV pour le template matching multi-échelle et Tesseract pour l'OCR. C'est le mode recommandé en jeu.
 - **sim** : fournisseur sinusoïdal utile pour valider l'UI ou enregistrer des démonstrations.
 
 ## Packaging Windows (EXE + installeur)

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from threading import Event, Thread, Lock
 from time import perf_counter, sleep
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 import logging
 
 from .config import AppConfig
@@ -29,8 +29,111 @@ try:  # pragma: no cover - optional runtime dependency
 except Exception:
     dxcam = None  # type: ignore
 
+try:  # pragma: no cover - optional runtime dependency
+    import mss
+except Exception:
+    mss = None  # type: ignore
+
 
 LOGGER = logging.getLogger(__name__)
+
+
+CaptureRegion = Optional[Tuple[int, int, int, int]]
+
+
+class _CaptureBackend:
+    """Abstract screen capture backend."""
+
+    def start(self, region: CaptureRegion) -> None:
+        raise NotImplementedError
+
+    def stop(self) -> None:  # pragma: no cover - simple default
+        pass
+
+    def get_latest_frame(self) -> Optional["np.ndarray"]:
+        raise NotImplementedError
+
+
+class _DXCamCapture(_CaptureBackend):
+    """dxcam-based capture backend optimized for DirectX."""
+
+    def __init__(self) -> None:
+        if dxcam is None:
+            raise RuntimeError("dxcam module is not available")
+        self._camera = dxcam.create(output_color="BGR")
+        self._running = False
+
+    def start(self, region: CaptureRegion) -> None:
+        self._camera.start(target_fps=30, video_mode=True, region=region)
+        self._running = True
+
+    def stop(self) -> None:  # pragma: no cover - hardware resource cleanup
+        if self._running:
+            try:
+                self._camera.stop()
+            finally:
+                self._running = False
+
+    def get_latest_frame(self) -> Optional["np.ndarray"]:
+        return self._camera.get_latest_frame()
+
+
+class _MSSCapture(_CaptureBackend):
+    """Capture backend relying on MSS (works with Vulkan and general rendering)."""
+
+    def __init__(self) -> None:
+        if mss is None:
+            raise RuntimeError("mss module is not available")
+        if np is None:
+            raise RuntimeError("numpy is required for MSS capture")
+        self._sct: Optional["mss.base.MSSBase"] = None
+        self._region: CaptureRegion = None
+
+    def start(self, region: CaptureRegion) -> None:
+        self._region = region
+        if self._sct is None:
+            self._sct = mss.mss()
+
+    def stop(self) -> None:  # pragma: no cover - hardware resource cleanup
+        if self._sct is not None:
+            try:
+                self._sct.close()
+            except Exception:
+                pass
+        self._sct = None
+        self._region = None
+
+    def _ensure_instance(self) -> "mss.base.MSSBase":
+        if self._sct is None:
+            self._sct = mss.mss()
+        return self._sct
+
+    def get_latest_frame(self) -> Optional["np.ndarray"]:
+        assert np is not None
+        sct = self._ensure_instance()
+        region = self._region
+        if region is None:
+            monitor = sct.monitors[0]
+            left = int(monitor.get("left", 0))
+            top = int(monitor.get("top", 0))
+            width = int(monitor.get("width", 0))
+            height = int(monitor.get("height", 0))
+        else:
+            left, top, width, height = (int(v) for v in region)
+        if width <= 0 or height <= 0:
+            LOGGER.debug("Capture backend received non-positive region size: %s", region)
+            return None
+        bbox = {
+            "left": left,
+            "top": top,
+            "width": width,
+            "height": height,
+        }
+        shot = sct.grab(bbox)
+        frame = np.asarray(shot, dtype=np.uint8)
+        if frame.shape[2] >= 3:
+            frame = frame[:, :, :3]
+        return frame
 
 
 class HeatProvider:
@@ -75,14 +178,16 @@ class VisionHeatProvider(HeatProvider):
     """Vision-based provider using template matching and OCR."""
 
     def __init__(self, config: AppConfig, callback: Optional[Callable[[int], None]] = None) -> None:
-        if dxcam is None or cv2 is None or pytesseract is None:
+        if cv2 is None or pytesseract is None or np is None:
             raise RuntimeError(
-                "VisionHeatProvider requires dxcam, cv2 and pytesseract to be installed"
+                "VisionHeatProvider requires numpy, cv2 and pytesseract to be installed"
             )
         self._config = config
         self._vision = config.vision
         self._callback = callback
-        self._camera = dxcam.create(output_color="BGR")
+        self._capture, backend_name = self._build_capture_backend(self._vision.capture_backend)
+        self._capture_backend_name = backend_name
+        LOGGER.info("Backend de capture sélectionné: %s", backend_name)
         self._thread: Optional[Thread] = None
         self._stop_event = Event()
         self._heat_lock = Lock()
@@ -106,35 +211,69 @@ class VisionHeatProvider(HeatProvider):
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
-        if self._camera:  # pragma: no cover - hardware resource cleanup
-            self._camera.stop()
+        self._capture.stop()
 
     def get_heat(self) -> Optional[int]:
         with self._heat_lock:
             return self._heat_value
 
     def _loop(self) -> None:  # pragma: no cover - requires realtime hardware
-        self._camera.start(
-            target_fps=30,
-            video_mode=True,
-            region=self._vision.buff_bar_region,
-        )
-        while not self._stop_event.is_set():
-            frame = self._camera.get_latest_frame()
-            if frame is None:
-                sleep(0.01)
-                continue
+        region = self._vision.buff_bar_region
+        try:
+            self._capture.start(region)
+        except Exception:
+            LOGGER.exception(
+                "Impossible de démarrer le backend %s", self._capture_backend_name
+            )
+            return
+        try:
+            while not self._stop_event.is_set():
+                frame = self._capture.get_latest_frame()
+                if frame is None:
+                    sleep(0.01)
+                    continue
+                try:
+                    heat = self._process_frame(frame)
+                except Exception:  # pragma: no cover - safety net
+                    LOGGER.exception("Failed to process frame")
+                    heat = None
+                if heat is not None:
+                    with self._heat_lock:
+                        self._heat_value = heat
+                    if self._callback:
+                        self._callback(heat)
+                sleep(0.03)
+        finally:
+            self._capture.stop()
+
+    def _build_capture_backend(
+        self, requested: Optional[str]
+    ) -> tuple[_CaptureBackend, str]:
+        backend = (requested or "auto").lower()
+        if backend == "vulkan":
+            backend = "mss"
+        candidates = ["dxcam", "mss"] if backend == "auto" else [backend]
+        last_error: Optional[Exception] = None
+        for candidate in candidates:
             try:
-                heat = self._process_frame(frame)
-            except Exception:  # pragma: no cover - safety net
-                LOGGER.exception("Failed to process frame")
-                heat = None
-            if heat is not None:
-                with self._heat_lock:
-                    self._heat_value = heat
-                if self._callback:
-                    self._callback(heat)
-            sleep(0.03)
+                capture = self._create_capture_backend(candidate)
+            except Exception as exc:
+                LOGGER.warning(
+                    "Échec d'initialisation du backend %s: %s", candidate, exc
+                )
+                last_error = exc
+                continue
+            return capture, candidate
+        raise RuntimeError(
+            f"Aucun backend de capture disponible ({backend})"
+        ) from last_error
+
+    def _create_capture_backend(self, backend: str) -> _CaptureBackend:
+        if backend == "dxcam":
+            return _DXCamCapture()
+        if backend == "mss":
+            return _MSSCapture()
+        raise RuntimeError(f"Backend de capture inconnu: {backend}")
 
     def _process_frame(self, frame: "np.ndarray") -> Optional[int]:
         assert cv2 is not None and np is not None and pytesseract is not None
