@@ -50,6 +50,7 @@ class VisionOptions:
     match_threshold: float = 0.75
     ocr_psm: int = 7
     ocr_threshold: int = 150
+    capture_backend: str = "auto"
 
 
 @dataclass
@@ -108,6 +109,7 @@ class AppConfig:
             match_threshold=vision_data.get("match_threshold", 0.75),
             ocr_psm=vision_data.get("ocr_psm", 7),
             ocr_threshold=vision_data.get("ocr_threshold", 150),
+            capture_backend=vision_data.get("capture_backend", "auto"),
         )
         template_library = {
             key: val for key, val in data.get("template_library", {}).items()

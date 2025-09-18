@@ -51,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--debug", action="store_true", help="Afficher la valeur numérique")
     parser.add_argument("--theme", choices=list(THEMES.keys()), help="Thème de la jauge")
     parser.add_argument("--provider", choices=["sim", "cv"], default="cv", help="Source des données de Heat")
+    parser.add_argument(
+        "--capture-backend",
+        choices=["auto", "dxcam", "mss", "vulkan"],
+        help="Backend de capture pour la vision",
+    )
     parser.add_argument("--template", type=Path, help="Chemin vers le template d'icône")
     parser.add_argument("--buffbar", type=str, help="Zone de la barre de buffs (x,y,w,h)")
     parser.add_argument("--ocrp", type=str, help="Zone OCR relative (ox,oy,w,h)")
@@ -100,6 +105,11 @@ def apply_overrides(config: AppConfig, args: argparse.Namespace) -> None:
     vision = config.vision
     if args.template:
         vision.template_path = args.template
+    if args.capture_backend:
+        backend = args.capture_backend.lower()
+        if backend == "vulkan":
+            backend = "mss"
+        vision.capture_backend = backend
     if args.buffbar:
         parts = [p.strip() for p in args.buffbar.split(",") if p.strip()]
         if len(parts) != 4:
