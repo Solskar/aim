@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aim"
+version = "0.1.0"
+description = "OCR helper that bundles Tesseract installation helpers for Windows"
+readme = "README.md"
+authors = [
+  { name = "AIM Developers" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+  "pytesseract>=0.3.10",
+  "Pillow>=10.0.0"
+]
+
+[project.scripts]
+aim-cli = "aim.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
